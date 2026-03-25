@@ -104,11 +104,14 @@
 <video id="localCam" autoplay muted playsinline webkit-playsinline></video>
 
 <script>
+    // Robust Global Ice Servers for International Connections
     const PEER_CONFIG = {
         'iceServers': [
             { 'urls': 'stun:stun.l.google.com:19302' },
             { 'urls': 'stun:stun1.l.google.com:19302' },
-            { 'urls': 'stun:stun2.l.google.com:19302' }
+            { 'urls': 'stun:stun2.l.google.com:19302' },
+            { 'urls': 'stun:stun3.l.google.com:19302' },
+            { 'urls': 'stun:stun4.l.google.com:19302' }
         ]
     };
 
@@ -157,25 +160,21 @@
         }
     }
 
-    // Helper to extract URL from iframe string if provided
-    function cleanUrl(input) {
-        if (input.includes('<iframe')) {
-            const match = input.match(/src=["']([^"']+)["']/);
-            return match ? match[1] : input;
-        }
-        return input;
-    }
-
     function generateLink() {
         const s = document.getElementById("tSubj").value, g = document.getElementById("tGrade").value, t = document.getElementById("tName").value;
         let f = document.getElementById("tForm").value;
         
         if (!s || !g || !t || !f) return alert("Fill all fields.");
         
-        f = cleanUrl(f); // Extract src if iframe was pasted
+        // Extract URL from iframe if necessary
+        if (f.includes('<iframe')) {
+            const match = f.match(/src=["']([^"']+)["']/);
+            if (match) f = match[1];
+        }
         
         const seed = btoa(g + t).substring(0, 10).toLowerCase();
-        // Maintain embedded=true for Google Forms to ensure clean UI
+        
+        // Ensure Google Forms works inside iframe
         if (f.includes('docs.google.com/forms') && !f.includes('embedded=true')) {
             f += (f.includes('?') ? '&embedded=true' : '?embedded=true');
         }
@@ -199,7 +198,7 @@
         for (let i = 1; i <= document.getElementById("tCount").value; i++) {
             grid.innerHTML += `
                 <div class="student-box" id="slot-${i}" data-occupied="false" data-sid="">
-                    <video class="grid-video" autoplay muted playsinline webkit-playsinline></video>
+                    <video class="grid-video" autoplay muted playsinline></video>
                     <div class="log-section">
                         <div class="log-line"><b>Name:</b> <span class="s-name">Station ${i}</span></div>
                         <div class="log-line"><b>ID:</b> <span class="s-id">---</span></div>
@@ -217,8 +216,10 @@
                 if (slot) {
                     slot.dataset.occupied = "true"; slot.dataset.sid = call.metadata.id;
                     const v = slot.querySelector('video');
-                    v.srcObject = remStream;
-                    v.play().catch(() => {});
+                    if(v.srcObject !== remStream) {
+                        v.srcObject = remStream;
+                        v.play().catch(()=>{});
+                    }
                     slot.querySelector('.s-name').innerText = call.metadata.name;
                     slot.querySelector('.s-id').innerText = call.metadata.id;
                     slot.classList.add('active');
@@ -254,14 +255,17 @@
             peer = new Peer({ config: PEER_CONFIG });
             peer.on('open', (id) => {
                 const meta = { name: document.getElementById("sName").value, id: document.getElementById("sID").value };
-                const loop = () => {
+                
+                // Re-connection/Stream Logic for Global Visibility
+                const connectLoop = () => {
                     if (!isRunning) return;
                     peer.call(roomId, stream, { metadata: meta });
                     const c = peer.connect(roomId);
                     c.on('data', d => { if (d.cmd === "KICK_ALL") endSession(); });
                     window.activeConn = c; sync();
                 };
-                loop(); setInterval(loop, 10000);
+                connectLoop();
+                setInterval(connectLoop, 15000); // Re-heartbeat every 15 seconds
             });
 
             setInterval(() => { if (isRunning) { timeLeft--; updateTimer(); if (timeLeft <= 0) endSession(); } }, 1000);
@@ -288,9 +292,7 @@
     function enterExam() {
         if (!document.getElementById("sName").value || !document.getElementById("sID").value) return alert("Identify yourself.");
         document.getElementById("overlay").style.display = "none";
-        // Load the cleaned URL into the existing iframe
-        let formUrl = decodeURIComponent(urlParams.get("form"));
-        document.getElementById("testFrame").src = formUrl;
+        document.getElementById("testFrame").src = decodeURIComponent(urlParams.get("form"));
     }
 
     function endAllSessions() {
@@ -306,6 +308,7 @@
     function endSession() { 
         sync(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })); 
         isRunning = false; 
+        if(stream) stream.getTracks().forEach(t => t.stop());
         window.location.replace("about:blank"); 
     }
 
@@ -318,8 +321,12 @@
     }
     
     function loadManualForm() {
-        let url = cleanUrl(document.getElementById("manualUrl").value);
+        let url = document.getElementById("manualUrl").value;
         if (url) { 
+            if (url.includes('<iframe')) {
+                const match = url.match(/src=["']([^"']+)["']/);
+                if (match) url = match[1];
+            }
             if (url.includes('docs.google.com/forms') && !url.includes('embedded=true')) {
                 url += (url.includes('?') ? '&embedded=true' : '?embedded=true');
             }
