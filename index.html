@@ -67,7 +67,7 @@
             <div class="input-group"><label>Grade/Section</label><input id="tGrade" oninput="saveFields()" placeholder="10-A"></div>
             <div class="input-group"><label>Teacher Full Name</label><input id="tName" oninput="saveFields()" placeholder="Juan Dela Cruz"></div>
         </div>
-        <div class="input-group" style="margin-bottom:12px;"><label>Google Form URL</label><input id="tForm" oninput="saveFields()" placeholder="https://forms.gle/..."></div>
+        <div class="input-group" style="margin-bottom:12px;"><label>Google Form URL or Embed Code</label><input id="tForm" oninput="saveFields()" placeholder="Paste link or <iframe...> here"></div>
         <div class="input-row">
             <div class="input-group"><label>Minutes</label><input id="tMinutes" oninput="saveFields()" type="number" value="60"></div>
             <div class="input-group"><label>Students</label><input id="tCount" oninput="saveFields()" type="number" value="45"></div>
@@ -104,7 +104,6 @@
 <video id="localCam" autoplay muted playsinline webkit-playsinline></video>
 
 <script>
-    // NAT TRAVERSAL CONFIG (Fixes remote connections)
     const PEER_CONFIG = {
         'iceServers': [
             { 'urls': 'stun:stun.l.google.com:19302' },
@@ -158,12 +157,30 @@
         }
     }
 
+    // Helper to extract URL from iframe string if provided
+    function cleanUrl(input) {
+        if (input.includes('<iframe')) {
+            const match = input.match(/src=["']([^"']+)["']/);
+            return match ? match[1] : input;
+        }
+        return input;
+    }
+
     function generateLink() {
-        const s = document.getElementById("tSubj").value, g = document.getElementById("tGrade").value, t = document.getElementById("tName").value, f = document.getElementById("tForm").value;
+        const s = document.getElementById("tSubj").value, g = document.getElementById("tGrade").value, t = document.getElementById("tName").value;
+        let f = document.getElementById("tForm").value;
+        
         if (!s || !g || !t || !f) return alert("Fill all fields.");
+        
+        f = cleanUrl(f); // Extract src if iframe was pasted
+        
         const seed = btoa(g + t).substring(0, 10).toLowerCase();
-        let finalForm = f + (f.includes('?') ? '&hl=en' : '?hl=en');
-        document.getElementById("copyLink").value = `${window.location.origin}${window.location.pathname}?form=${encodeURIComponent(finalForm)}&time=${document.getElementById("tMinutes").value}&room=${seed}&subj=${encodeURIComponent(s)}`;
+        // Maintain embedded=true for Google Forms to ensure clean UI
+        if (f.includes('docs.google.com/forms') && !f.includes('embedded=true')) {
+            f += (f.includes('?') ? '&embedded=true' : '?embedded=true');
+        }
+
+        document.getElementById("copyLink").value = `${window.location.origin}${window.location.pathname}?form=${encodeURIComponent(f)}&time=${document.getElementById("tMinutes").value}&room=${seed}&subj=${encodeURIComponent(s)}`;
         saveFields();
     }
 
@@ -244,7 +261,7 @@
                     c.on('data', d => { if (d.cmd === "KICK_ALL") endSession(); });
                     window.activeConn = c; sync();
                 };
-                loop(); setInterval(loop, 10000); // Faster heartbeat for reliability
+                loop(); setInterval(loop, 10000);
             });
 
             setInterval(() => { if (isRunning) { timeLeft--; updateTimer(); if (timeLeft <= 0) endSession(); } }, 1000);
@@ -271,7 +288,9 @@
     function enterExam() {
         if (!document.getElementById("sName").value || !document.getElementById("sID").value) return alert("Identify yourself.");
         document.getElementById("overlay").style.display = "none";
-        document.getElementById("testFrame").src = decodeURIComponent(urlParams.get("form"));
+        // Load the cleaned URL into the existing iframe
+        let formUrl = decodeURIComponent(urlParams.get("form"));
+        document.getElementById("testFrame").src = formUrl;
     }
 
     function endAllSessions() {
@@ -299,9 +318,11 @@
     }
     
     function loadManualForm() {
-        let url = document.getElementById("manualUrl").value;
+        let url = cleanUrl(document.getElementById("manualUrl").value);
         if (url) { 
-            url += (url.includes('?') ? '&hl=en' : '?hl=en');
+            if (url.includes('docs.google.com/forms') && !url.includes('embedded=true')) {
+                url += (url.includes('?') ? '&embedded=true' : '?embedded=true');
+            }
             document.getElementById("testFrame").src = url; 
         }
     }
